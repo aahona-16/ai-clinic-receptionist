@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aahona's DentalClinic - AI Receptionist</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="clinic-branding">
+                <h1>🦷 Aahona's DentalClinic</h1>
+                <p>AI Voice Receptionist</p>
+            </div>
+            <a href="admin.html" class="admin-link">Admin Dashboard</a>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Chat Section -->
+            <div class="chat-section">
+                <div class="chat-container" id="chat">
+                    <div class="message ai-message">
+                        <span>Welcome! I'll help you book an appointment. Click the microphone to start speaking.</span>
+                    </div>
+                </div>
+                
+                <!-- Listening Indicator -->
+                <div class="listening-indicator" id="listeningIndicator" style="display: none;">
+                    <div class="listening-dot"></div>
+                    <span>Listening...</span>
+                </div>
+
+                <!-- Controls -->
+                <div class="controls">
+                    <button id="mic" class="mic-button">🎤 Start</button>
+                    <button id="resetButton" class="reset-button">🔄 Restart</button>
+                </div>
+            </div>
+
+            <!-- Booking Status Section -->
+            <div class="booking-section" id="bookingSection" style="display: none;">
+                <div class="booking-card">
+                    <h2>✓ Appointment Confirmed!</h2>
+                    
+                    <div class="booking-details">
+                        <div class="detail-row">
+                            <span class="label">Name:</span>
+                            <span id="confirmName" class="value">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">Issue:</span>
+                            <span id="confirmIssue" class="value">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">Date:</span>
+                            <span id="confirmDate" class="value">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">Time:</span>
+                            <span id="confirmTime" class="value">-</span>
+                        </div>
+                    </div>
+
+                    <div class="guidance-section" id="guidanceSection"></div>
+
+                    <div class="calendar-action">
+                        <button id="downloadCalendar" class="calendar-button">📅 Add to Calendar</button>
+                    </div>
+
+                    <button id="restartButton" class="restart-button">Book Another Appointment</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <span id="statusText">Ready to start</span>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

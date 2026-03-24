@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Clinic Dashboard</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+</head>
+
+<body class="p-10 bg-gray-100">
+
+<h1 class="text-3xl mb-8">Clinic Dashboard</h1>
+
+<div class="grid grid-cols-3 gap-6 mb-10">
+
+<div class="bg-white p-6 rounded shadow">
+<h2>Total Appointments</h2>
+<p id="appointments"></p>
+</div>
+
+<div class="bg-white p-6 rounded shadow">
+<h2>Total Patients</h2>
+<p id="patients"></p>
+</div>
+
+</div>
+
+<table class="w-full bg-white shadow">
+
+<thead>
+
+<tr>
+<th>Name</th>
+<th>Issue</th>
+<th>Date</th>
+<th>Time</th>
+</tr>
+
+</thead>
+
+<tbody id="table"></tbody>
+
+</table>
+
+<script>
+
+async function load(){
+
+const appointments=await fetch("/appointments").then(r=>r.json())
+const patients=await fetch("/patients").then(r=>r.json())
+
+document.getElementById("appointments").innerText=appointments.length
+document.getElementById("patients").innerText=patients.length
+
+appointments.forEach(a=>{
+
+document.getElementById("table").innerHTML+=`
+<tr>
+<td>${a.name}</td>
+<td>${a.issue}</td>
+<td>${a.date}</td>
+<td>${a.time}</td>
+</tr>
+`
+
+})
+
+}
+
+load()
+
+</script>
+
+</body>
+
+</html>
