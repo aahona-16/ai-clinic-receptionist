@@ -13,6 +13,7 @@ function write(data){
 fs.writeFileSync(file,JSON.stringify(data,null,2))
 }
 
+// POST - Add or update a patient visit
 router.post("/",(req,res)=>{
 
 let patients = read()
@@ -44,8 +45,20 @@ res.json(patient)
 
 })
 
+// GET - Fetch all patients
 router.get("/",(req,res)=>{
 res.json(read())
+})
+
+// DELETE - Delete a patient
+router.delete("/",(req,res)=>{
+let patients = read()
+const name = req.body.name
+
+patients = patients.filter(p => p.name !== name)
+write(patients)
+
+res.json({ success: true, message: 'Patient deleted' })
 })
 
 module.exports=router

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Diagnostic Tool</title>
+    <style>
+        body { font-family: Arial; max-width: 800px; margin: 20px auto; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        h2 { color: #333; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 3px; }
+        .output { background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 3px; font-family: monospace; white-space: pre-wrap; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>🎤 Voice Diagnosis Tool</h1>
+    
+    <div class="section">
+        <h2>1. Check Available Voices</h2>
+        <p>Click to see all voices installed on your system</p>
+        <button onclick="checkVoices()">Check System Voices</button>
+        <div id="voicesOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>2. Test English Voice</h2>
+        <p>Verify English voice (should work on all systems)</p>
+        <button onclick="testEnglish()">Test English "Hello"</button>
+        <div id="englishOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>3. Test Hindi Voice</h2>
+        <p>Test Hindi text-to-speech</p>
+        <button onclick="testHindi()">Test Hindi "नमस्ते"</button>
+        <div id="hindiOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>4. Test Hindi with Different Voices</h2>
+        <p>Try Hindi text with each available voice</p>
+        <button onclick="testHindiWithAllVoices()">Test Hindi with ALL Voices</button>
+        <div id="allVoicesOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <script>
+        function log(elementId, message, type = 'info') {
+            const el = document.getElementById(elementId);
+            el.style.display = 'block';
+            const timestamp = new Date().toLocaleTimeString();
+            const styleClass = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info';
+            el.innerHTML += `<span class="${styleClass}">[${timestamp}] ${message}</span>\n`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function checkVoices() {
+            document.getElementById('voicesOutput').innerHTML = '';
+            log('voicesOutput', '=== CHECKING SYSTEM VOICES ===');
+            
+            if (!window.speechSynthesis) {
+                log('voicesOutput', 'ERROR: Speech Synthesis not supported!', 'error');
+                return;
+            }
+
+            const voices = window.speechSynthesis.getVoices();
+            log('voicesOutput', `Total voices available: ${voices.length}`, 'success');
+            
+            voices.forEach((v, i) => {
+                log('voicesOutput', `[${i}] ${v.name} - Lang: ${v.lang} - ${v.default ? '(DEFAULT)' : ''}`);
+            });
+
+            // Check for specific languages
+            log('voicesOutput', '\n=== LANGUAGE BREAKDOWN ===');
+            
+            const hindiVoices = voices.filter(v => v.lang.startsWith('hi'));
+            log('voicesOutput', `Hindi voices (hi*): ${hindiVoices.length}`, hindiVoices.length > 0 ? 'success' : 'error');
+            hindiVoices.forEach(v => log('voicesOutput', `  - ${v.name}`));
+
+            const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+            log('voicesOutput', `English voices (en*): ${englishVoices.length}`, englishVoices.length > 0 ? 'success' : 'error');
+            englishVoices.forEach(v => log('voicesOutput', `  - ${v.name}`));
+        }
+
+        function testEnglish() {
+            document.getElementById('englishOutput').innerHTML = '';
+            log('englishOutput', '=== TESTING ENGLISH ===');
+
+            const utterance = new SpeechSynthesisUtterance('Hello, this is a test');
+            utterance.lang = 'en-US';
+
+            utterance.onstart = () => log('englishOutput', 'Speaker started...', 'info');
+            utterance.onend = () => log('englishOutput', 'Speaker ended successfully!', 'success');
+            utterance.onerror = (e) => log('englishOutput', `Error: ${e.error}`, 'error');
+
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function testHindi() {
+            document.getElementById('hindiOutput').innerHTML = '';
+            log('hindiOutput', '=== TESTING HINDI ===');
+
+            const utterance = new SpeechSynthesisUtterance('नमस्ते, यह एक परीक्षण है');
+            utterance.lang = 'hi-IN';
+
+            log('hindiOutput', `Language code set to: ${utterance.lang}`, 'info');
+            log('hindiOutput', `Voice will be: ${utterance.voice ? utterance.voice.name : 'Browser default'}`, 'info');
+
+            utterance.onstart = () => log('hindiOutput', 'Speaker started...', 'info');
+            utterance.onend = () => log('hindiOutput', 'Speaker ended!', 'success');
+            utterance.onerror = (e) => log('hindiOutput', `Error: ${e.error}`, 'error');
+
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function testHindiWithAllVoices() {
+            document.getElementById('allVoicesOutput').innerHTML = '';
+            log('allVoicesOutput', '=== TESTING HINDI WITH ALL VOICES ===');
+
+            const voices = window.speechSynthesis.getVoices();
+            
+            voices.forEach((voice, index) => {
+                setTimeout(() => {
+                    const utterance = new SpeechSynthesisUtterance('नमस्ते');
+                    utterance.lang = 'hi-IN';
+                    utterance.voice = voice;
+
+                    log('allVoicesOutput', `Testing with voice #${index}: ${voice.name} (${voice.lang})`);
+
+                    utterance.onstart = () => log('allVoicesOutput', `  ✓ ${voice.name} - SPEAKING`, 'success');
+                    utterance.onend = () => {};
+                    utterance.onerror = (e) => log('allVoicesOutput', `  ✗ ${voice.name} - ERROR: ${e.error}`, 'error');
+
+                    window.speechSynthesis.speak(utterance);
+                }, index * 2000);
+            });
+        }
+
+        // Auto check voices on page load
+        window.addEventListener('load', () => {
+            setTimeout(checkVoices, 500);
+        });
+    </script>
+</body>
+</html>

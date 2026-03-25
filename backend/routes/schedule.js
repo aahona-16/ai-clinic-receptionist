@@ -36,7 +36,7 @@ function readSchedule(){
   }
 
   // Keep stored custom schedule, and ensure current + upcoming real dates always exist.
-  const rolling = generateRollingSchedule(30)
+  const rolling = generateRollingSchedule(90)
   return { ...rolling, ...stored }
 }
 

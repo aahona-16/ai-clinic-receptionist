@@ -43,7 +43,93 @@ window.diagnoseSpeechRecognition = function() {
   
   return true
 }
-console.log('Type diagnoseSpeechRecognition() in console to debug issues')
+
+// Voice availability diagnostic
+window.diagnoseVoices = function() {
+  console.log('=== VOICE AVAILABILITY DIAGNOSTIC ===')
+  if (!window.speechSynthesis) {
+    console.error('Speech Synthesis not supported!')
+    return
+  }
+  
+  const voices = window.speechSynthesis.getVoices()
+  console.log(`Total voices available: ${voices.length}`)
+  console.log('\n--- All Available Voices ---')
+  voices.forEach((v, i) => {
+    console.log(`[${i}] ${v.name} (${v.lang}) - ${v.default ? 'DEFAULT' : 'custom'} - ${v.localService ? 'LOCAL' : 'remote'}`)
+  })
+  
+  console.log('\n--- Language Availability ---')
+  const langs = {
+    'en-US': 'English',
+    'hi-IN': 'Hindi',
+    'bn-BD': 'Bengali (BD)',
+    'bn-IN': 'Bengali (IN)',
+    'or-IN': 'Odia',
+    'ta-IN': 'Tamil',
+    'es-ES': 'Spanish',
+    'fr-FR': 'French'
+  }
+  
+  Object.entries(langs).forEach(([code, name]) => {
+    const has = hasVoiceForLanguage(code)
+    const candidates = voices.filter(v => getBaseLang(v.lang) === getBaseLang(code))
+    console.log(`${name} (${code}): ${has ? '✓ AVAILABLE' : '✗ NOT FOUND'} (${candidates.length} candidates)`)
+    if (candidates.length > 0) {
+      candidates.slice(0, 3).forEach(v => {
+        console.log(`    - ${v.name} (${v.lang})`)
+      })
+    }
+  })
+  
+  console.log('\n--- Current Settings ---')
+  console.log(`Current Language: ${language}`)
+  console.log(`Current Voice Mode: ${voiceMode}`)
+  console.log(`Speech Language: ${speechLanguage}`)
+  
+  console.log('\n--- Test Voice Playback ---')
+  console.log('Run: window.testVoicePlayback("hi-IN") to test a specific language')
+}
+
+window.testVoicePlayback = function(lang) {
+  console.log(`[TEST] Testing voice for: ${lang}`)
+  const testMsg = lang === 'hi-IN' ? 'नमस्ते, यह एक परीक्षण है' : 'Hello, this is a test'
+  
+  // Temporarily override for testing
+  const savedMode = voiceMode
+  const savedLang = speechLanguage
+  
+ speechLanguage = lang
+  updateSpeechLanguagePreference()
+  
+  const utterance = new SpeechSynthesisUtterance(testMsg)
+  utterance.lang = speechLanguage
+  
+  const voice = pickBestVoiceForLanguage(speechLanguage)
+  if (voice) {
+    utterance.voice = voice
+    console.log(`[TEST] Using voice: ${voice.name}`)
+  } else {
+    console.warn(`[TEST] No voice found for ${speechLanguage}`)
+  }
+  
+  utterance.onstart = () => console.log('[TEST] Speech started')
+  utterance.onend = () => {
+    console.log('[TEST] Speech ended')
+    speechLanguage = savedLang
+  }
+  utterance.onerror = (e) => {
+    console.error('[TEST] Speech error:', e)
+    speechLanguage = savedLang
+  }
+  
+  window.speechSynthesis.cancel()
+  window.speechSynthesis.speak(utterance)
+}
+
+console.log('Type diagnoseSpeechRecognition() in console to debug speech issues')
+console.log('Type diagnoseVoices() in console to check available voices')
+console.log('Type testVoicePlayback("hi-IN") to test specific language')
 
 const micButton = document.getElementById('mic')
 const resetButton = document.getElementById('resetButton')
@@ -86,7 +172,11 @@ let recognition = null
 let latestInterimTranscript = ''
 let lastHandledTranscript = ''
 let lastHandledAt = 0
-const SUPPORTED_LANGUAGES = ['en-US', 'hi-IN', 'es-ES', 'fr-FR']
+let lastSpokenText = ''
+let lastSpokenAt = 0
+let speechLanguage = 'en-US'
+let voiceMode = localStorage.getItem('voiceMode') || 'native'
+const SUPPORTED_LANGUAGES = ['en-US', 'hi-IN', 'bn-BD', 'bn-IN', 'or-IN', 'ta-IN', 'es-ES', 'fr-FR']
 
 function resolveLanguagePreference() {
   const browserLanguage = (navigator.language || 'en-US').toLowerCase()
@@ -99,6 +189,15 @@ function resolveLanguagePreference() {
 }
 
 let language = resolveLanguagePreference()
+
+// Load saved language if exists
+const savedLanguage = localStorage.getItem('aiLanguage')
+if (savedLanguage) {
+  const normalizedSavedLanguage = savedLanguage === 'bn-IN' ? 'bn-BD' : savedLanguage
+  if (SUPPORTED_LANGUAGES.includes(normalizedSavedLanguage)) {
+    language = normalizedSavedLanguage
+  }
+}
 
 const appointment = {
   name: '',
@@ -130,7 +229,7 @@ const TRANSLATIONS = {
     reset: "Okay, let's start over. Say hello when you're ready."
   },
   'hi-IN': {
-    greeting: "नमस्ते! सैलाबाला डेंटल क्लिनिक में आपका स्वागत है। मैं आपका वर्चुअल रिसेप्शनिस्ट हूं। आपका पूरा नाम क्या है?",
+    greeting: "नमस्ते! आहोना's डेंटल क्लिनिक में आपका स्वागत है। मैं आपका वर्चुअल रिसेप्शनिस्ट हूं। आपका पूरा नाम क्या है?",
     ask_name: "कृपया अपना पूरा नाम बताएं।",
     ask_issue: "धन्यवाद, {name}। आज आप किस समस्या का सामना कर रहे हैं? कृपया एक वाक्य में बताएं।",
     ask_date: "आपको कौन सी तारीख पसंद है? उदाहरण के लिए, 'कल', 'मार्च 18' या बस '18' कहें।",
@@ -146,6 +245,60 @@ const TRANSLATIONS = {
     speaking: "बोल रहा हूं...",
     processing: "प्रक्रिया जारी है...",
     reset: "ठीक है, फिर से शुरू करते हैं। जब आप तैयार हों तो कुछ कहें।"
+  },
+  'bn-BD': {
+    greeting: "হাই! Aahona's DentalClinic-এ স্বাগতম। আমি আপনার ভার্চুয়াল রিসেপশনিস্ট। আপনার নামটা বলবেন?",
+    ask_name: "আপনার পুরো নামটা বলবেন?",
+    ask_issue: "ধন্যবাদ, {name}। আজ কী সমস্যা হচ্ছে? এক লাইনে বলুন।",
+    ask_date: "কোন দিন আসতে চান? যেমন কাল, মার্চ 18, বা শুধু 18 বলুন।",
+    ask_time: "{date} তারিখে কয়টায় আসবেন? যেমন 2 PM বা 10:30 AM বলুন।",
+    confirm: "দারুণ, {name}! আপনার অ্যাপয়েন্টমেন্ট {date} তারিখে {time}-এ বুক হয়ে গেছে। দেখা হবে।",
+    invalid_name: "নামটা পরিষ্কার শুনিনি, আবার বলুন।",
+    invalid_issue: "সমস্যাটা একটু সহজ করে বলুন।",
+    invalid_date: "তারিখটা বুঝিনি, যেমন কাল বা মার্চ 18 বলুন।",
+    invalid_time: "সময়টা বুঝিনি, যেমন 2 PM বা 10:30 AM বলুন।",
+    no_input: "কিছু শুনতে পাইনি, আবার বলুন।",
+    clarify: "মাফ করবেন, বুঝিনি। আরেকবার বলুন।",
+    listening: "শুনছি...",
+    speaking: "বলছি...",
+    processing: "চেক করছি...",
+    reset: "ঠিক আছে, আবার শুরু করি। রেডি হলে বলুন।"
+  },
+  'or-IN': {
+    greeting: "ନମସ୍କାର! Aahona's DentalClinic କୁ ସ୍ୱାଗତ। ମୁଁ ଆପଣଙ୍କ ଭର୍ଚୁଆଲ୍ ରିସେପ୍ସନିଷ୍ଟ। ଦୟାକରି ଆପଣଙ୍କ ପୂର୍ଣ୍ଣ ନାମ କହନ୍ତୁ।",
+    ask_name: "ଦୟାକରି ଆପଣଙ୍କ ପୂର୍ଣ୍ଣ ନାମ କହନ୍ତୁ।",
+    ask_issue: "ଧନ୍ୟବାଦ, {name}। ଆଜି କଣ ସମସ୍ୟା ହେଉଛି? ଗୋଟିଏ ବାକ୍ୟରେ କହନ୍ତୁ।",
+    ask_date: "ଆପଣ କେଉଁ ତାରିଖ ଚାହୁଁଛନ୍ତି? ଉଦାହରଣ ସ୍ୱରୂପ 'କାଲି', 'March 18' କିମ୍ବା '18' କହନ୍ତୁ।",
+    ask_time: "{date} ରେ କେଉଁ ସମୟ ଆପଣଙ୍କ ପାଇଁ ଭଲ? ଯେପରି '2 PM' କିମ୍ବା '10:30 AM'।",
+    confirm: "ଭଲ, {name}! ଆପଣଙ୍କ ଅପଏଣ୍ଟମେଣ୍ଟ {date} ରେ {time} ରେ ବୁକ୍ ହେଲା।",
+    invalid_name: "ଆପଣଙ୍କ ନାମ ଭଲରେ ବୁଝି ପାରିଲିନି। ଦୟାକରି ପୁରା ନାମ କହନ୍ତୁ।",
+    invalid_issue: "ଦୟାକରି ସମସ୍ୟାଟି ଗୋଟିଏ କିମ୍ବା ଦୁଇଟି ବାକ୍ୟରେ କହନ୍ତୁ।",
+    invalid_date: "ତାରିଖ ବୁଝି ପାରିଲିନି। 'କାଲି' କିମ୍ବା 'March 18' ପରି କହନ୍ତୁ।",
+    invalid_time: "ସମୟ ବୁଝି ପାରିଲିନି। '2 PM' କିମ୍ବା '10:30 AM' ପରି କହନ୍ତୁ।",
+    no_input: "କିଛି ଶୁଣି ପାରିଲିନି। ଆଉଥରେ ଚେଷ୍ଟା କରନ୍ତୁ।",
+    clarify: "ମାଫ କରିବେ, ବୁଝି ପାରିଲିନି। ପୁଣିଥରେ କହନ୍ତୁ।",
+    listening: "ଶୁଣୁଛି...",
+    speaking: "କହୁଛି...",
+    processing: "ପ୍ରକ୍ରିୟା ଚାଲିଛି...",
+    reset: "ଠିକ ଅଛି, ପୁଣି ଆରମ୍ଭ କରିବା। ପ୍ରସ୍ତୁତ ହେଲେ କହନ୍ତୁ।"
+  },
+  'ta-IN': {
+    greeting: "வணக்கம்! Aahona's DentalClinic-க்கு வரவேற்கிறேன். நான் உங்கள் மெய்நிகர் வரவேற்பாளர். உங்கள் முழுப் பெயர் என்ன?",
+    ask_name: "தயவுசெய்து உங்கள் முழுப் பெயரை சொல்லுங்கள்.",
+    ask_issue: "நன்றி, {name}. இன்று என்ன பிரச்சினை உள்ளது? ஒரு வாக்கியத்தில் சொல்லுங்கள்.",
+    ask_date: "எந்த தேதியை விரும்புகிறீர்கள்? உதாரணமாக 'நாளை', 'March 18' அல்லது '18' என்று சொல்லலாம்.",
+    ask_time: "{date} அன்று எந்த நேரம் உங்களுக்கு பொருத்தம்? உதாரணமாக '2 PM' அல்லது '10:30 AM'.",
+    confirm: "சரி, {name}! உங்கள் நேர்முகம் {date} அன்று {time} மணிக்கு பதிவு செய்யப்பட்டது.",
+    invalid_name: "உங்கள் பெயர் தெளிவாக கேட்கவில்லை. தயவுசெய்து முழுப் பெயரை சொல்லுங்கள்.",
+    invalid_issue: "தயவுசெய்து உங்கள் பிரச்சினையை ஒரு அல்லது இரண்டு வாக்கியங்களில் சொல்லுங்கள்.",
+    invalid_date: "தேதி புரியவில்லை. 'நாளை' அல்லது 'March 18' போல சொல்லுங்கள்.",
+    invalid_time: "நேரம் புரியவில்லை. '2 PM' அல்லது '10:30 AM' போல சொல்லுங்கள்.",
+    no_input: "எதுவும் கேட்கவில்லை. மீண்டும் முயற்சிக்கவும்.",
+    clarify: "மன்னிக்கவும், புரியவில்லை. மீண்டும் சொல்லுங்கள்.",
+    listening: "கேட்கிறேன்...",
+    speaking: "பேசுகிறேன்...",
+    processing: "செயலாக்கப்படுகிறது...",
+    reset: "சரி, மீண்டும் தொடங்கலாம். தயார் ஆனதும் பேசுங்கள்."
   },
   'es-ES': {
     greeting: "¡Hola! Bienvenido a Aahona's DentalClinic. Soy tu recepcionista virtual. ¿Cuál es tu nombre completo?",
@@ -183,6 +336,71 @@ const TRANSLATIONS = {
     processing: "Traitement...",
     reset: "D'accord, recommençons. Dites quelque chose quand vous êtes prêt."
   }
+}
+
+const SPEECH_FALLBACKS = {
+  'hi-IN': 'en-US',
+  'bn-BD': 'hi-IN',
+  'bn-IN': 'hi-IN',
+  'or-IN': 'hi-IN',
+  'ta-IN': 'en-US'
+}
+
+function getBaseLang(langCode) {
+  return (langCode || 'en-US').toLowerCase().split('-')[0]
+}
+
+function hasVoiceForLanguage(langCode) {
+  if (!window.speechSynthesis) return false
+  const voices = window.speechSynthesis.getVoices()
+  const base = getBaseLang(langCode)
+  return voices.some(v => getBaseLang(v.lang) === base)
+}
+
+function getPreferredSpeechLanguage() {
+  if (voiceMode === 'force-hi') return 'hi-IN'
+  if (voiceMode === 'force-en') return 'en-US'
+  return language
+}
+
+function updateSpeechLanguagePreference() {
+  speechLanguage = getPreferredSpeechLanguage()
+  console.log(`[LANG PREF] Speech language set to: ${speechLanguage}`)
+}
+
+function pickBestVoiceForLanguage(langCode) {
+  if (!window.speechSynthesis) return null
+  const voices = window.speechSynthesis.getVoices()
+  if (!voices.length) return null
+
+  const base = getBaseLang(langCode)
+  const candidates = voices.filter(v => getBaseLang(v.lang) === base)
+  
+  console.log(`[VOICE DEBUG] Looking for language: ${langCode} (base: ${base})`)
+  console.log(`[VOICE DEBUG] Candidates found: ${candidates.length}`)
+  if (candidates.length) {
+    candidates.forEach((v, i) => {
+      console.log(`  [${i}] ${v.name} (${v.lang}) - ${v.default ? 'DEFAULT' : 'custom'}`)
+    })
+  }
+  
+  if (!candidates.length) {
+    console.warn(`[VOICE DEBUG] No voice found for ${langCode}. Available voices:`)
+    voices.slice(0, 10).forEach((v, i) => {
+      console.log(`  [${i}] ${v.name} (${v.lang})`)
+    })
+    return null
+  }
+
+  // Prefer natural/local voices when available.
+  const preferred = candidates.find(v => {
+    const name = (v.name || '').toLowerCase()
+    return name.includes('google') || name.includes('natural') || name.includes('neural') || name.includes('india')
+  })
+
+  const selected = preferred || candidates[0]
+  console.log(`[VOICE DEBUG] Selected voice: ${selected.name} (${selected.lang})`)
+  return selected
 }
 
 function generateSchedule() {
@@ -230,6 +448,15 @@ function addMessage(sender, text) {
 function handleTranscriptOnce(text) {
   const cleaned = (text || '').trim()
   if (!cleaned) return
+
+  // Ignore likely echo captured from the assistant's own just-spoken audio.
+  const cleanedLower = cleaned.toLowerCase()
+  if (lastSpokenText && Date.now() - lastSpokenAt < 2500) {
+    const spokenLower = lastSpokenText.toLowerCase()
+    if (cleanedLower.length > 12 && spokenLower.length > 12 && (cleanedLower === spokenLower || spokenLower.includes(cleanedLower) || cleanedLower.includes(spokenLower))) {
+      return
+    }
+  }
 
   const now = Date.now()
   if (cleaned === lastHandledTranscript && now - lastHandledAt < 2500) {
@@ -291,17 +518,41 @@ function speak(text) {
   }
 
   const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = language
-  utterance.rate = 1.0
+  updateSpeechLanguagePreference()
+  const requestedSpeechLanguage = speechLanguage
+  utterance.lang = requestedSpeechLanguage
+
+  // Try to find a voice for the selected language
+  let voice = pickBestVoiceForLanguage(requestedSpeechLanguage)
+  
+  // If no voice found for requested language, try English as emergency fallback
+  if (!voice && requestedSpeechLanguage !== 'en-US') {
+    console.warn(`[SPEAK] No voice for ${requestedSpeechLanguage}, trying English fallback voice...`)
+    voice = pickBestVoiceForLanguage('en-US')
+  }
+  
+  // Set voice if found; keep voice/lang aligned to avoid silent playback on some engines.
+  if (voice) {
+    utterance.lang = voice.lang
+    utterance.voice = voice
+    console.log(`[SPEAK] Using voice: ${voice.name} (${voice.lang}) for requested ${requestedSpeechLanguage}`)
+  } else {
+    utterance.lang = requestedSpeechLanguage
+    console.log(`[SPEAK] No explicit voice found, using browser/OS default for ${utterance.lang}`)
+  }
+
+  lastSpokenText = text
+  lastSpokenAt = Date.now()
+  utterance.rate = requestedSpeechLanguage.startsWith('bn') || requestedSpeechLanguage.startsWith('or') ? 0.9 : 1.0
   utterance.volume = 1.0
   utterance.pitch = 1.0
 
   utterance.onstart = () => {
-    console.log('TTS started for:', text)
+    console.log('[SPEAK] TTS started:', text.substring(0, 50) + '...')
   }
 
   utterance.onend = () => {
-    console.log('TTS ended')
+    console.log('[SPEAK] TTS ended')
     isSpeaking = false
     isProcessing = false
     if (micButton) micButton.disabled = false
@@ -315,35 +566,56 @@ function speak(text) {
     }, 350)
   }
 
+  let retriedWithDefaultVoice = false
+
   utterance.onerror = (e) => {
-    console.error('TTS error:', e)
+    console.error('[SPEAK] TTS error:', e)
+
+    // Retry once with browser default voice/lang selection.
+    if (!retriedWithDefaultVoice) {
+      retriedWithDefaultVoice = true
+      console.log('[SPEAK] Retrying with browser default voice...')
+      try {
+        const fallbackUtterance = new SpeechSynthesisUtterance(text)
+        fallbackUtterance.rate = utterance.rate
+        fallbackUtterance.volume = utterance.volume
+        fallbackUtterance.pitch = utterance.pitch
+        fallbackUtterance.onstart = () => {
+          console.log('[SPEAK] Fallback utterance started')
+        }
+        fallbackUtterance.onend = utterance.onend
+        fallbackUtterance.onerror = () => {
+          console.error('[SPEAK] Fallback also failed')
+          isSpeaking = false
+          isProcessing = false
+          if (micButton) micButton.disabled = false
+          updateStatus('Speech error: fallback failed')
+        }
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(fallbackUtterance)
+        addMessage('AI', text)
+        return
+      } catch (err) {
+        console.error('[SPEAK] Retry failed:', err)
+      }
+    }
+
     isSpeaking = false
     isProcessing = false
     if (micButton) micButton.disabled = false
     updateStatus('Speech error: ' + e.error)
-    showListeningIndicator(true)
-    setTimeout(() => {
-      if (!isSpeaking && !isProcessing && recognition) {
-        startListening()
-      }
-    }, 350)
   }
 
   // Cancel any pending utterances
   window.speechSynthesis.cancel()
-  // Apply voices if available
-  const voices = window.speechSynthesis.getVoices()
-  if (voices.length > 0) {
-    const langMatch = voices.find(v => v.lang.startsWith(language.split('-')[0]))
-    if (langMatch) utterance.voice = langMatch
-  }
+  window.speechSynthesis.resume()
   
   try {
     window.speechSynthesis.speak(utterance)
     addMessage('AI', text)
-    console.log('TTS speak called for:', text)
+    console.log('[SPEAK] Utterance queued for playback')
   } catch (e) {
-    console.error('Could not speak:', e)
+    console.error('[SPEAK] Could not speak:', e)
     isSpeaking = false
     isProcessing = false
     if (micButton) micButton.disabled = false
@@ -488,6 +760,9 @@ function getIssueAcknowledgement(issueText) {
   const acknowledgeByLanguage = {
     'en-US': `Noted. You said: ${issueText}.`,
     'hi-IN': `ठीक है। आपने कहा: ${issueText}.`,
+    'bn-BD': `ওকে, আপনি বললেন: ${issueText}.`,
+    'or-IN': `ଠିକ ଅଛି। ଆପଣ କହିଲେ: ${issueText}.`,
+    'ta-IN': `சரி. நீங்கள் சொன்னது: ${issueText}.`,
     'es-ES': `Entendido. Usted dijo: ${issueText}.`,
     'fr-FR': `D'accord. Vous avez dit: ${issueText}.`
   }
@@ -498,11 +773,34 @@ function getIssueAcknowledgement(issueText) {
 function parseDate(text) {
   const normalized = text.toLowerCase().trim()
 
-  if (normalized.includes('tomorrow')) {
+  const tomorrowWords = {
+    'en-US': ['tomorrow'],
+    'hi-IN': ['कल', 'kal', 'tomorrow'],
+    'bn-BD': ['আগামীকাল', 'কাল', 'tomorrow'],
+    'or-IN': ['କାଲି', 'tomorrow'],
+    'ta-IN': ['நாளை', 'tomorrow'],
+    'es-ES': ['mañana', 'tomorrow'],
+    'fr-FR': ['demain', 'tomorrow']
+  }
+
+  const todayWords = {
+    'en-US': ['today'],
+    'hi-IN': ['आज', 'aaj', 'today'],
+    'bn-BD': ['আজ', 'today'],
+    'or-IN': ['ଆଜି', 'today'],
+    'ta-IN': ['இன்று', 'today'],
+    'es-ES': ['hoy', 'today'],
+    'fr-FR': ['aujourd\'hui', 'today']
+  }
+
+  const langTomorrow = tomorrowWords[language] || tomorrowWords['en-US']
+  const langToday = todayWords[language] || todayWords['en-US']
+
+  if (langTomorrow.some(word => normalized.includes(word.toLowerCase()))) {
     const d = new Date(); d.setDate(d.getDate() + 1)
     return formatDate(d)
   }
-  if (normalized.includes('today')) {
+  if (langToday.some(word => normalized.includes(word.toLowerCase()))) {
     return formatDate(new Date())
   }
 
@@ -542,13 +840,30 @@ function parseDate(text) {
 }
 
 function parseTime(text) {
-  const normalized = text.toLowerCase().trim()
+  const normalized = text
+    .toLowerCase()
+    .replace(/\./g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
   const match = normalized.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
   if (!match) return null
 
   let hour = Number(match[1])
   const minute = match[2] ? Number(match[2]) : 0
-  const ampm = match[3]
+  let ampm = match[3]
+
+  // Infer AM/PM from spoken contextual words in Indic languages.
+  if (!ampm) {
+    const pmHints = ['afternoon', 'evening', 'night', 'dopahar', 'dopehar', 'dophar', 'dopher', 'shaam', 'raat', 'दोपहर', 'दुपहर', 'शाम', 'रात', 'বিকাল', 'রাত', 'ସଂଧ୍ୟା', 'ରାତି', 'மாலை', 'இரவு']
+    const amHints = ['morning', 'subah', 'सुबह', 'সকাল', 'ସକାଳ', 'காலை']
+
+    if (pmHints.some(h => normalized.includes(h))) ampm = 'pm'
+    if (amHints.some(h => normalized.includes(h))) ampm = 'am'
+
+    // In clinic-booking context, bare 1-7 is usually afternoon.
+    if (!ampm && hour >= 1 && hour <= 7) ampm = 'pm'
+  }
 
   if (ampm) {
     if (ampm === 'pm' && hour < 12) hour += 12
@@ -559,12 +874,76 @@ function parseTime(text) {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
+function isAffirmativeResponse(text) {
+  const normalized = (text || '')
+    .toLowerCase()
+    .replace(/[.,!?;:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const affirmativeWords = [
+    'yes', 'yeah', 'yup', 'correct', 'right', 'absolutely', 'ok', 'okay', 'sure',
+    'haan', 'ha', 'han', 'ji', 'bilkul', 'हाँ', 'हां', 'जी',
+    'হ্যাঁ', 'হ্যা', 'হাঁ',
+    'ହଁ',
+    'ஆம்', 'ஆமா',
+    'sí', 'si', 'oui'
+  ]
+
+  return affirmativeWords.some(word => normalized === word || normalized.startsWith(`${word} `))
+}
+
+function isNegativeResponse(text) {
+  const normalized = (text || '')
+    .toLowerCase()
+    .replace(/[.,!?;:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const negativeWords = [
+    'no', 'nope', 'wrong', 'incorrect',
+    'nahi', 'nahin', 'nhi', 'ना', 'नहीं',
+    'না',
+    'ନା',
+    'இல்லை', 'வேண்டாம்',
+    'non'
+  ]
+
+  return negativeWords.some(word => normalized === word || normalized.startsWith(`${word} `))
+}
+
+function getNameConfirmationPrompt(name) {
+  const prompts = {
+    'en-US': `Did I hear your name correctly as ${name}? Please say yes or no.`,
+    'hi-IN': `क्या मैंने आपका नाम सही सुना ${name}? कृपया हां या नहीं कहें।`,
+    'bn-BD': `আপনার নাম ${name}, ঠিক তো? হ্যাঁ বা না বলুন।`,
+    'bn-IN': `আপনার নাম ${name}, ঠিক তো? হ্যাঁ বা না বলুন।`,
+    'or-IN': `ମୁଁ ଆପଣଙ୍କ ନାମ ${name} ଠିକ ଶୁଣିଛି କି? ଦୟାକରି ହଁ କିମ୍ବା ନା କହନ୍ତୁ।`,
+    'ta-IN': `${name} என்பதே உங்கள் பெயரா? தயவுசெய்து ஆம் அல்லது இல்லை என்று சொல்லுங்கள்.`,
+    'es-ES': `¿Escuché correctamente tu nombre como ${name}? Por favor, di sí o no.`,
+    'fr-FR': `Avez-vous dit ${name}? Veuillez dire oui ou non.`
+  }
+  return prompts[language] || prompts['en-US']
+}
+
+function getYesNoClarification() {
+  const prompts = {
+    'en-US': 'Please say yes or no.',
+    'hi-IN': 'कृपया हां या नहीं कहें।',
+    'bn-BD': 'হ্যাঁ বা না বলুন।',
+    'bn-IN': 'হ্যাঁ বা না বলুন।',
+    'or-IN': 'ଦୟାକରି ହଁ କିମ୍ବା ନା କହନ୍ତୁ।',
+    'ta-IN': 'தயவுசெய்து ஆம் அல்லது இல்லை என்று சொல்லுங்கள்.',
+    'es-ES': 'Por favor, di sí o no.',
+    'fr-FR': 'Veuillez dire oui ou non.'
+  }
+  return prompts[language] || prompts['en-US']
+}
+
 function formatDateNice(dateStr) {
   // dateStr is in YYYY-MM-DD format
   const [year, month, day] = dateStr.split('-')
   const date = new Date(year, month - 1, day)
-  const monthName = date.toLocaleString('en-US', { month: 'long' })
-  const dayName = date.toLocaleString('en-US', { weekday: 'long' })
+  const monthName = date.toLocaleString(language || 'en-US', { month: 'long' })
+  const dayName = date.toLocaleString(language || 'en-US', { weekday: 'long' })
   return `${dayName}, ${monthName} ${parseInt(day)}`
 }
 
@@ -622,6 +1001,10 @@ function buildAvailabilityMessage(availabilityData) {
   const bookingWindowDays = availabilityData.bookingWindowDays || 90
 
   if (!available.length) {
+    if (language === 'hi-IN') return `अभी कोई स्लॉट उपलब्ध नहीं मिला। बुकिंग विंडो अगले ${bookingWindowDays} दिनों की है। कृपया दूसरी तारीख चुनें।`
+    if (language === 'bn-BD' || language === 'bn-IN') return `এখন ফাঁকা স্লট পাচ্ছি না। আগামী ${bookingWindowDays} দিনের মধ্যে বুক করা যাবে। অন্য তারিখ বলুন।`
+    if (language === 'or-IN') return `ଏବେ କୌଣସି ଖାଲି ସ୍ଲଟ୍ ମିଳିଲା ନାହିଁ। ବୁକିଂ ଉଇଣ୍ଡୋ ଆଗାମୀ ${bookingWindowDays} ଦିନ ପର୍ଯ୍ୟନ୍ତ। ଦୟାକରି ଅନ୍ୟ ତାରିଖ କହନ୍ତୁ।`
+    if (language === 'ta-IN') return `இப்போது காலி நேரம் எதுவும் கிடைக்கவில்லை. முன்பதிவு சாளரம் அடுத்த ${bookingWindowDays} நாட்களுக்கு உள்ளது. வேறு தேதியைத் தேர்ந்தெடுக்கவும்.`
     return `I could not find open slots right now. Our booking window is the next ${bookingWindowDays} days. Please try another date.`
   }
 
@@ -630,7 +1013,28 @@ function buildAvailabilityMessage(availabilityData) {
     return `${formatDateNice(day.date)}: ${topSlots}`
   })
 
+  if (language === 'hi-IN') return `अगले उपलब्ध विकल्प ये हैं: ${lines.join('. ')}। कृपया इनमें से एक तारीख चुनें।`
+  if (language === 'bn-BD' || language === 'bn-IN') return `পরের ফাঁকা অপশনগুলো: ${lines.join('. ')}। এর মধ্যে একটা তারিখ বাছুন।`
+  if (language === 'or-IN') return `ପରବର୍ତ୍ତୀ ଉପଲବ୍ଧ ବିକଳ୍ପଗୁଡ଼ିକ: ${lines.join('. ')}। ଦୟାକରି ଏଥିରୁ ଗୋଟିଏ ତାରିଖ ବାଛନ୍ତୁ।`
+  if (language === 'ta-IN') return `அடுத்த கிடைக்கும் தேர்வுகள்: ${lines.join('. ')}। இதில் இருந்து ஒரு தேதியைத் தேர்ந்தெடுக்கவும்.`
   return `Here are the next available options. ${lines.join('. ')}. Please choose a date from these.`
+}
+
+function buildTimeOptionsMessage(date, slots) {
+  if (!slots || !slots.length) {
+    if (language === 'hi-IN') return `${formatDateNice(date)} को कोई समय स्लॉट उपलब्ध नहीं है। कृपया दूसरी तारीख चुनें।`
+    if (language === 'bn-BD' || language === 'bn-IN') return `${formatDateNice(date)} তারিখে ফাঁকা সময় নেই। অন্য তারিখ বলুন।`
+    if (language === 'or-IN') return `${formatDateNice(date)} ରେ କୌଣସି ସମୟ ସ୍ଲଟ୍ ନାହିଁ। ଦୟାକରି ଅନ୍ୟ ତାରିଖ ବାଛନ୍ତୁ।`
+    if (language === 'ta-IN') return `${formatDateNice(date)} அன்று காலி நேரம் இல்லை. வேறு தேதியைத் தேர்ந்தெடுக்கவும்.`
+    return `No time slots are available on ${formatDateNice(date)}. Please choose another date.`
+  }
+
+  const topSlots = slots.slice(0, 6).map(formatTime).join(', ')
+  if (language === 'hi-IN') return `${formatDateNice(date)} को उपलब्ध समय हैं: ${topSlots}। कृपया इनमें से एक समय चुनें।`
+  if (language === 'bn-BD' || language === 'bn-IN') return `${formatDateNice(date)} তারিখে ফাঁকা সময়গুলো: ${topSlots}। একটা সময় বাছুন।`
+  if (language === 'or-IN') return `${formatDateNice(date)} ରେ ଉପଲବ୍ଧ ସମୟ: ${topSlots}। ଦୟାକରି ଏଥିରୁ ଗୋଟିଏ ସମୟ ବାଛନ୍ତୁ।`
+  if (language === 'ta-IN') return `${formatDateNice(date)} அன்று கிடைக்கும் நேரங்கள்: ${topSlots}। இதில் இருந்து ஒரு நேரத்தைத் தேர்ந்தெடுக்கவும்.`
+  return `Available times on ${formatDateNice(date)} are: ${topSlots}. Please pick one of these times.`
 }
 
 async function bookAppointment() {
@@ -803,13 +1207,7 @@ function processTranscript(transcript) {
         return
       }
       appointment.name = extractedName
-      const confirmMsg = language === 'en-US' 
-        ? `Did I hear your name correctly as ${appointment.name}? Please say yes or no.`
-        : language === 'hi-IN'
-        ? `क्या मैंने आपका नाम सही सुना ${appointment.name}? कृपया हां या नहीं कहें।`
-        : language === 'es-ES'
-        ? `¿Escuché correctamente tu nombre como ${appointment.name}? Por favor, di sí o no.`
-        : `Avez-vous dit ${appointment.name}? Veuillez dire oui ou non.`
+      const confirmMsg = getNameConfirmationPrompt(appointment.name)
       speak(confirmMsg)
       state = STATES.CONFIRM_NAME
       isProcessing = false
@@ -817,26 +1215,20 @@ function processTranscript(transcript) {
       }
 
     case STATES.CONFIRM_NAME: {
-      const response = trimmed.toLowerCase()
-      const isAffirmative = response.match(/^(yes|yeah|yup|correct|right|absolutely|ok|okay|da|ha|ji|bilkul|sí|si|oui)/i)
-      const isNegative = response.match(/^(no|nope|wrong|incorrect|nahi|no|non)/i)
+      const isAffirmative = isAffirmativeResponse(trimmed)
+      const isNegative = isNegativeResponse(trimmed)
       
       if (isAffirmative) {
         speak(TRANSLATIONS[language].ask_issue.replace('{name}', appointment.name))
         state = STATES.ASK_ISSUE
         isProcessing = false
       } else if (isNegative) {
-        speak(TRANSLATIONS[language].invalid_name)
+        appointment.name = ''  // Clear the incorrect name
+        speak(TRANSLATIONS[language].ask_name)
         state = STATES.ASK_NAME
         isProcessing = false
       } else {
-        const clarifyMsg = language === 'en-US'
-          ? 'Please say yes or no.'
-          : language === 'hi-IN'
-          ? 'कृपया हां या नहीं कहें।'
-          : language === 'es-ES'
-          ? 'Por favor, di sí o no.'
-          : 'Veuillez dire oui ou non.'
+        const clarifyMsg = getYesNoClarification()
         speak(clarifyMsg)
         isProcessing = false
       }
@@ -875,7 +1267,15 @@ function processTranscript(transcript) {
       getDateAvailableSlots(parsedDate).then(slots => {
         if (!slots.length) {
           getUpcomingAvailability(45, 5).then(data => {
-            const reasonMsg = `We do not have slots on ${formatDateNice(parsedDate)}. You can book within the next ${data.bookingWindowDays || 90} days.`
+            const reasonMsg = language === 'hi-IN'
+              ? `${formatDateNice(parsedDate)} को स्लॉट उपलब्ध नहीं हैं। आप अगले ${data.bookingWindowDays || 90} दिनों के भीतर बुक कर सकते हैं।`
+              : (language === 'bn-BD' || language === 'bn-IN')
+              ? `${formatDateNice(parsedDate)} তারিখে স্লট নেই। আপনি আগামী ${data.bookingWindowDays || 90} দিনের মধ্যে বুক করতে পারবেন।`
+              : language === 'or-IN'
+              ? `${formatDateNice(parsedDate)} ରେ ସ୍ଲଟ୍ ନାହିଁ। ଆପଣ ଆଗାମୀ ${data.bookingWindowDays || 90} ଦିନ ମଧ୍ୟରେ ବୁକ୍ କରିପାରିବେ।`
+              : language === 'ta-IN'
+              ? `${formatDateNice(parsedDate)} அன்று நேரங்கள் இல்லை. அடுத்த ${data.bookingWindowDays || 90} நாட்களில் முன்பதிவு செய்யலாம்.`
+              : `We do not have slots on ${formatDateNice(parsedDate)}. You can book within the next ${data.bookingWindowDays || 90} days.`
             const optionsMsg = buildAvailabilityMessage(data)
             speak(`${reasonMsg} ${optionsMsg}`)
             isProcessing = false
@@ -891,6 +1291,15 @@ function processTranscript(transcript) {
     }
 
     case STATES.ASK_TIME: {
+      const askingForTimeOptions = /(available|slot|slots|time available|which time|what time|free time|options)/i.test(trimmed)
+      if (askingForTimeOptions) {
+        getDateAvailableSlots(appointment.date).then(slots => {
+          speak(buildTimeOptionsMessage(appointment.date, slots))
+          isProcessing = false
+        })
+        break
+      }
+
       const parsedTime = parseTime(trimmed)
       if (!parsedTime) {
         speak(TRANSLATIONS[language].invalid_time)
@@ -900,15 +1309,41 @@ function processTranscript(transcript) {
       // Check availability with server
       checkTimeAvailability(appointment.date, parsedTime).then(available => {
         if (!available) {
-          const noTimeMsg = language === 'en-US'
-            ? `The time ${formatTime(parsedTime)} is not available. Please try another time.`
-            : language === 'hi-IN'
-            ? `${formatTime(parsedTime)} का समय उपलब्ध नहीं है। कृपया दूसरा समय चुनें।`
-            : language === 'es-ES'
-            ? `La hora ${formatTime(parsedTime)} no está disponible. Por favor, intenta otra hora.`
-            : `L'heure ${formatTime(parsedTime)} n'est pas disponible. Veuillez essayer une autre heure.`
-          speak(noTimeMsg)
-          isProcessing = false
+          getDateAvailableSlots(appointment.date).then(slots => {
+            const noTimeMsg = language === 'en-US'
+              ? `The time ${formatTime(parsedTime)} is not available.`
+              : language === 'hi-IN'
+              ? `${formatTime(parsedTime)} का समय उपलब्ध नहीं है।`
+              : (language === 'bn-BD' || language === 'bn-IN')
+              ? `${formatTime(parsedTime)} টাইমটা খালি নেই।`
+              : language === 'or-IN'
+              ? `${formatTime(parsedTime)} ସମୟ ଉପଲବ୍ଧ ନୁହେଁ।`
+              : language === 'ta-IN'
+              ? `${formatTime(parsedTime)} நேரம் கிடைக்கவில்லை.`
+              : language === 'es-ES'
+              ? `La hora ${formatTime(parsedTime)} no está disponible.`
+              : `L'heure ${formatTime(parsedTime)} n'est pas disponible.`
+
+            if (slots.length) {
+              speak(`${noTimeMsg} ${buildTimeOptionsMessage(appointment.date, slots)}`)
+              isProcessing = false
+            } else {
+              getUpcomingAvailability(45, 5).then(data => {
+                const optionsMsg = buildAvailabilityMessage(data)
+                const noSlotsMsg = language === 'hi-IN'
+                  ? `${formatDateNice(appointment.date)} को कोई स्लॉट बाकी नहीं है।`
+                  : (language === 'bn-BD' || language === 'bn-IN')
+                  ? `${formatDateNice(appointment.date)} তারিখে আর স্লট নেই।`
+                  : language === 'or-IN'
+                  ? `${formatDateNice(appointment.date)} ରେ ଆଉ ସ୍ଲଟ୍ ନାହିଁ।`
+                  : language === 'ta-IN'
+                  ? `${formatDateNice(appointment.date)} அன்று இனி நேரம் இல்லை.`
+                  : `No slots are left on ${formatDateNice(appointment.date)}.`
+                speak(`${noTimeMsg} ${noSlotsMsg} ${optionsMsg}`)
+                isProcessing = false
+              })
+            }
+          })
           return
         }
         appointment.time = parsedTime
@@ -1203,6 +1638,72 @@ function init() {
     }
   }
 
+  // Setup language selector
+  const languageSelector = document.getElementById('languageSelector')
+  const voiceModeSelector = document.getElementById('voiceModeSelector')
+  if (languageSelector) {
+    languageSelector.value = language
+    languageSelector.onchange = (e) => {
+      const newLanguage = e.target.value
+      console.log(`Changing language from ${language} to ${newLanguage}`)
+      language = newLanguage
+      localStorage.setItem('aiLanguage', language)
+      
+      // Update recognition language
+      if (recognition) {
+        try {
+          recognition.lang = language
+          console.log('Recognition language updated to:', language)
+        } catch (err) {
+          console.warn('Could not update recognition language:', err)
+        }
+      }
+      
+      // Reset conversation with new language
+      resetConversation()
+      
+      // Show language change notification
+      const langNames = {
+        'en-US': '🇺🇸 English',
+        'hi-IN': '🇮🇳 Hindi (हिंदी)',
+        'bn-BD': '🇧🇩 Bengali (বাংলা)',
+        'bn-IN': '🇧🇩 Bengali (বাংলা)',
+        'or-IN': '🇮🇳 Odia (ଓଡ଼ିଆ)',
+        'ta-IN': '🇮🇳 Tamil (தமிழ்)',
+        'es-ES': '🇪🇸 Español',
+        'fr-FR': '🇫🇷 Français'
+      }
+      
+      const changeMsg = {
+        'en-US': `Language changed to English`,
+        'hi-IN': `भाषा हिंदी में बदल दी गई है`,
+        'bn-BD': `ভাষা বাংলায় পরিবর্তন করা হয়েছে`,
+        'bn-IN': `ভাষা বাংলায় পরিবর্তন করা হয়েছে`,
+        'or-IN': `ଭାଷା ଓଡ଼ିଆକୁ ବଦଳାଯାଇଛି`,
+        'ta-IN': `மொழி தமிழாக மாற்றப்பட்டுள்ளது`,
+        'es-ES': `Idioma cambiado a Español`,
+        'fr-FR': `Langue changée en Français`
+      }
+      
+      speak(changeMsg[language] || 'Language changed')
+    }
+  }
+
+  if (voiceModeSelector) {
+    voiceModeSelector.value = voiceMode
+    voiceModeSelector.onchange = (e) => {
+      voiceMode = e.target.value
+      localStorage.setItem('voiceMode', voiceMode)
+      updateSpeechLanguagePreference()
+      const modeMsg = voiceMode === 'force-hi'
+        ? 'Voice mode set to Hindi voice.'
+        : voiceMode === 'force-en'
+        ? 'Voice mode set to English voice.'
+        : 'Voice mode set to native language.'
+      speak(modeMsg)
+    }
+  }
+
   // Setup calendar download button
   const downloadCalendarBtn = document.getElementById('downloadCalendar')
   if (downloadCalendarBtn) {
@@ -1216,8 +1717,11 @@ function init() {
   if (window.speechSynthesis) {
     window.speechSynthesis.onvoiceschanged = () => {
       console.log('Voices changed, available voices:', window.speechSynthesis.getVoices().length)
+      updateSpeechLanguagePreference()
     }
   }
+
+  updateSpeechLanguagePreference()
 
   // Initialize speech recognition
   setupRecognition()

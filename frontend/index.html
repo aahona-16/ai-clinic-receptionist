@@ -14,7 +14,23 @@
                 <h1>🦷 Aahona's DentalClinic</h1>
                 <p>AI Voice Receptionist</p>
             </div>
-            <a href="admin.html" class="admin-link">Admin Dashboard</a>
+            <div class="header-controls">
+                <select id="languageSelector" class="language-selector">
+                    <option value="en-US">🇺🇸 English</option>
+                    <option value="hi-IN">🇮🇳 Hindi (हिंदी)</option>
+                    <option value="bn-BD">🇧🇩 Bengali (বাংলা)</option>
+                    <option value="or-IN">🇮🇳 Odia (ଓଡ଼ିଆ)</option>
+                    <option value="ta-IN">🇮🇳 Tamil (தமிழ்)</option>
+                    <option value="es-ES">🇪🇸 Español</option>
+                    <option value="fr-FR">🇫🇷 Français</option>
+                </select>
+                <select id="voiceModeSelector" class="voice-selector">
+                    <option value="native">Prefer Native Voice</option>
+                    <option value="force-hi">Force Hindi Voice</option>
+                    <option value="force-en">Force English Voice</option>
+                </select>
+                <a href="admin.html" class="admin-link">Admin Dashboard</a>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -81,6 +97,35 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <button id="patientLiveToggle" class="live-toggle-btn">Live Support</button>
+
+    <section class="live-support collapsed" id="liveSupportPanel">
+        <h3>Live Support <span id="patientUnreadBadge" class="unread-badge" style="display:none;">0</span></h3>
+        <p id="doctorAvailabilityText">Doctor availability: Checking...</p>
+        <p id="patientCallStatus" class="call-status">Call: Not connected</p>
+        <div id="patientLiveMessages" class="live-messages"></div>
+        <div class="live-input-row">
+            <input id="patientLiveInput" type="text" placeholder="Type urgent message...">
+            <button id="patientSendLive">Send</button>
+        </div>
+        <div class="live-actions">
+            <button id="patientUrgentBtn">Mark Urgent</button>
+            <button id="patientVideoBtn">Request Video Call</button>
+        </div>
+        <div class="video-wrap" id="patientVideoWrap" style="display:none;"></div>
+    </section>
+
+    <section id="patientVideoOverlay" class="video-overlay" style="display:none;">
+        <div class="video-overlay-header">
+            <span>Video Call</span>
+            <button id="patientEndCallBtn" class="video-end-btn">End Call</button>
+        </div>
+        <video id="patientRemoteVideo" class="video-remote-full" autoplay playsinline></video>
+        <video id="patientLocalVideo" class="video-local-pip" autoplay muted playsinline></video>
+    </section>
+
+    <script src="/socket.io/socket.io.js?v=20260326"></script>
+    <script src="script.js?v=20260326"></script>
+    <script src="live-patient.js?v=20260326"></script>
 </body>
 </html>

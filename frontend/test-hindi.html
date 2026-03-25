@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hindi Voice Test - Direct</title>
+    <style>
+        body { font-family: Arial; text-align: center; padding: 40px; background: #f0f0f0; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        button { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; border: none; border-radius: 5px; }
+        .btn-hindi { background: #FF9933; color: white; }
+        .btn-english { background: #4CAF50; color: white; }
+        #status { margin-top: 20px; padding: 15px; border-radius: 5px; font-weight: bold; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Hindi Voice Test</h1>
+        <p>This page tests if Hindi voice works on YOUR system</p>
+        
+        <button class="btn-hindi" onclick="speakHindi()">🇮🇳 SPEAK HINDI</button>
+        <button class="btn-english" onclick="speakEnglish()">🇬🇧 SPEAK ENGLISH</button>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        function updateStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = type;
+        }
+
+        function speakEnglish() {
+            updateStatus('Testing English...', 'info');
+            
+            const utterance = new SpeechSynthesisUtterance('Hello, this is English');
+            utterance.lang = 'en-US';
+            
+            utterance.onstart = () => {
+                updateStatus('✓ English is SPEAKING now', 'success');
+            };
+            
+            utterance.onend = () => {
+                updateStatus('✓ English speech completed', 'success');
+            };
+            
+            utterance.onerror = (e) => {
+                updateStatus('✗ English FAILED: ' + e.error, 'error');
+            };
+            
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function speakHindi() {
+            updateStatus('Testing Hindi...', 'info');
+            
+            const utterance = new SpeechSynthesisUtterance('नमस्ते, यह एक परीक्षण है');
+            utterance.lang = 'hi-IN';
+            
+            // Try to find Hindi voice
+            const voices = window.speechSynthesis.getVoices();
+            const hindiVoice = voices.find(v => v.lang && v.lang.startsWith('hi'));
+            
+            if (hindiVoice) {
+                utterance.voice = hindiVoice;
+                updateStatus('Found Hindi voice: ' + hindiVoice.name, 'info');
+            } else {
+                updateStatus('No Hindi voice found, using browser default...', 'info');
+            }
+            
+            utterance.onstart = () => {
+                updateStatus('✓ Hindi is SPEAKING now!', 'success');
+            };
+            
+            utterance.onend = () => {
+                updateStatus('✓ Hindi speech completed!', 'success');
+            };
+            
+            utterance.onerror = (e) => {
+                updateStatus('✗ Hindi FAILED: ' + e.error, 'error');
+            };
+            
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // Load voices on startup
+        window.addEventListener('load', () => {
+            updateStatus('Ready to test', 'info');
+            if (window.speechSynthesis.onvoiceschanged !== undefined) {
+                window.speechSynthesis.onvoiceschanged = () => {
+                    console.log('Voices loaded');
+                };
+            }
+        });
+    </script>
+</body>
+</html>
